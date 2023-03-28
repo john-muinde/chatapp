@@ -1,4 +1,4 @@
-const socket = io("http://localhost:3000");
+const socket = io();
 const messageContainer = document.getElementById("message-container");
 const roomContainer = document.getElementById("room-container");
 const messageForm = document.getElementById("send-container");
@@ -12,25 +12,30 @@ if (messageForm != null) {
   messageForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const message = messageInput.value;
-    appendMessage(`You: ${message}`);
-    socket.emit("send-chat-message", roomName, message);
+    socket.emit(
+      "send-chat-message",
+      document.querySelector("#receiver").textContent,
+      message,
+      localStorage.getItem("sessionId")
+    );
     messageInput.value = "";
+
+    messageContainer.innerHTML += `<div class="message my_msg">
+                                    <p>${message} <br /><span>12:18</span></p>
+                                  </div>`;
   });
 }
-// if (usernameForm) {
-//   const usernameForm = document.getElementById("getUserName");
-//   usernameForm.addEventListener("submit", (e) => {
-//     const message = document.querySelector('input[name="room"]').value;
-//     socket.emit("new-user", message);
-//   });
-// }
 
 socket.on("room-created", (room) => {
   appendUserJoinMessage(room);
 });
 
 socket.on("chat-message", (data) => {
-  appendMessage(`${data.name}: ${data.message}`);
+  if (data.name == document.querySelector("#receiver").textContent) {
+    appendMessage(`${data.message}`);
+  } else {
+    notifications(data.message, data.name);
+  }
 });
 
 socket.on("user-connected", (name, rooms) => {
@@ -47,7 +52,6 @@ socket.on("user-connected", (name, rooms) => {
 socket.on("connect", () => {
   const sessionId = localStorage.getItem("sessionId");
   if (sessionId) {
-    alert(sessionId)
     socket.emit("reconnect-user", sessionId);
   } else {
     socket.emit("new-user", name);
@@ -63,10 +67,20 @@ socket.on("user-disconnected", (name, users) => {
   elementToRemove.remove();
 });
 
-function appendMessage(message) {
-  const messageElement = document.createElement("div");
-  messageElement.innerText = message;
-  messageContainer.append(messageElement);
+socket.on("messages-response", (messages) => {
+  messages.forEach((message) => {
+    if (message.sender == document.getElementById("username").textContent) {
+      appendMessage(message.message, (tag = "my_msg"));
+    } else {
+      appendMessage(message.message, (tag = "friend_msg"));
+    }
+  });
+});
+
+function appendMessage(message, tag = "friend_msg") {
+  messageContainer.innerHTML += `<div class="message ${tag}">
+                                  <p>${message} <br /><span>12:18</span></p>
+                                </div>`;
 }
 
 function appendUserJoinMessage(name) {
@@ -76,5 +90,36 @@ function appendUserJoinMessage(name) {
                                       <h4>${name}</h4>
                                     </div>
                                 </div>
-                              </div>`;
+                              </div>
+                              `;
+  [...document.querySelectorAll(".chatlist .block")].forEach((block) => {
+    block.addEventListener("click", (e) => {
+      document.querySelector("#receiver").textContent =
+        e.target.textContent.trim();
+      socket.emit(
+        "messages-request",
+        document.getElementById("username").textContent,
+        e.target.textContent.trim()
+      );
+      messageContainer.innerHTML = "";
+    });
+  });
+}
+
+function notifications(message, sender) {
+  if (Notification.permission === "granted") {
+    const notification = new Notification(`New Message From ${sender}`, {
+      body: message,
+      icon: "path/to/notification-icon.png",
+    });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        const notification = new Notification(`New Message From ${sender}`, {
+          body: message,
+          icon: "path/to/notification-icon.png",
+        });
+      }
+    });
+  }
 }
